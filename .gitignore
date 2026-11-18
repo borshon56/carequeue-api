@@ -2,11 +2,18 @@
 # Dependencies
 node_modules/
 
-# Build output
+# Compiled output
 dist/
+build/
 coverage/
 
-# Environment variables
+# NestJS
+.nest/
+
+# TypeScript build cache
+*.tsbuildinfo
+
+# Environment variables and secrets
 .env
 .env.*
 !.env.example
@@ -14,11 +21,21 @@ coverage/
 # Logs
 *.log
 npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
 
-# Operating system
+# Operating system files
 .DS_Store
 Thumbs.db
 
-# IDE
+# IDE settings
 .vscode/*
 !.vscode/extensions.json
+.idea/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Test artifacts
+.nyc_output/

@@ -19,7 +19,11 @@
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",
     "test:debug": "vitest --inspect-brk --no-file-parallelism",
-    "test:e2e": "vitest run --config ./vitest.config.e2e.ts"
+    "test:e2e": "vitest run --config ./vitest.config.e2e.ts",
+    "migration:run": "typeorm migration:run -d dist/database/data-source.js",
+    "migration:revert": "typeorm migration:revert -d dist/database/data-source.js",
+    "migration:show": "typeorm migration:show -d dist/database/data-source.js",
+    "seed:admin": "npm run build && node dist/database/seeds/admin.seed.js"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.1",
@@ -46,8 +50,10 @@
     "@nestjs/mau": "^0.2.6",
     "@nestjs/schematics": "^12.0.0",
     "@nestjs/testing": "^12.0.1",
+    "@types/bcrypt": "^6.0.0",
     "@types/express": "^5.0.0",
-    "@types/node": "^24.0.0",
+    "@types/node": "^24.19.2",
+    "@types/passport-jwt": "^4.0.1",
     "@types/supertest": "^7.0.0",
     "@vitest/coverage-v8": "^4.1.2",
     "oxlint": "^1.58.0",
