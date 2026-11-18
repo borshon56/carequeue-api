@@ -12,6 +12,7 @@ import {
   DefaultValuePipe,
   ParseIntPipe,
 } from '@nestjs/common';
+import { ApiBearerAuth } from '@nestjs/swagger';
 
 import { PatientsService } from './patients.service.js';
 
@@ -29,7 +30,7 @@ interface AuthenticatedRequest {
     role: UserRole;
   };
 }
-
+@ApiBearerAuth()
 @Controller('patients')
 @UseGuards(JwtAuthGuard)
 export class PatientsController {
