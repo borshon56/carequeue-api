@@ -1,6 +1,5 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-/** Only Person 2 tables. USERS must exist first (Person 1 owns that table). */
 export class Person2Schema1763000000000 implements MigrationInterface {
   name = 'Person2Schema1763000000000';
 
@@ -70,6 +69,5 @@ export class Person2Schema1763000000000 implements MigrationInterface {
     await queryRunner.query(`DROP TABLE doctors`);
     await queryRunner.query(`DROP TABLE specializations`);
     await queryRunner.query(`DROP TABLE departments`);
-    // No DROP EXTENSION; these may be shared by other modules.
   }
 }

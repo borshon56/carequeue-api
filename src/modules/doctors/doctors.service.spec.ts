@@ -22,7 +22,6 @@ function makeService(user: { id: string; role: UserRole; isActive: boolean } | n
     create: vi.fn((value) => value),
     save: vi.fn(async (value) => ({ id: 'doc-1', ...value })),
   };
-  // Mirrors UsersService.getProfile(): returns the safe user or throws 404.
   const usersService = { getProfile: vi.fn(async () => { if (!user) throw new NotFound('User not found'); return user; }) };
   const departmentService = { getDepartmentById: vi.fn().mockResolvedValue({ id: dto.departmentId }) };
   const audit = { log: vi.fn().mockResolvedValue(undefined) };

@@ -17,8 +17,6 @@ import type { AuthenticatedUser } from '../../common/decorators/current-user.dec
 export class SlotsController {
   constructor(private readonly slotsService: SlotsService) {}
 
-  // Static routes are declared before ':id' so they are matched first.
-
   @Get('available')
   @ApiOperation({ summary: 'Public: future OPEN slots of active doctors (paginated)' })
   getAvailableSlots(@Query() dto: AvailableSlotsDto) { return this.slotsService.getAvailableSlots(dto); }

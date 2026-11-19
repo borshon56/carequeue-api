@@ -1,12 +1,6 @@
 import { Check, Column, CreateDateColumn, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
 import type { Doctor } from '../../doctors/entities/doctor.entity.js';
 
-/**
- * OPEN    - bookable.
- * BLOCKED - doctor/admin closed it (not bookable).
- * BOOKED  - set ONLY by Person 3 via SlotsService.markSlotBooked() inside the
- *           booking transaction; reset via releaseSlot() on cancellation.
- */
 export enum SlotStatus { OPEN = 'OPEN', BLOCKED = 'BLOCKED', BOOKED = 'BOOKED' }
 
 @Entity('doctor_slots')
