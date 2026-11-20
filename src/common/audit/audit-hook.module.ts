@@ -1,15 +1,12 @@
 import { Module } from '@nestjs/common';
-import { AUDIT_LOGGER, ConsoleAuditLogger } from './audit-logger.js';
+import { AUDIT_LOGGER } from './audit-logger.js';
+import { AuditLogsModule } from '../../modules/audit-logs/audit-logs.module.js';
+import { AuditLogsService } from '../../modules/audit-logs/audit-logs.service.js';
 
-/**
- * Temporary provider for the AUDIT_LOGGER contract, imported by Person 2's modules.
- * Person 4: when AuditLogsService implements AuditLogger, change this module to
- *   imports: [AuditLogsModule],
- *   providers: [{ provide: AUDIT_LOGGER, useExisting: AuditLogsService }],
- * Nothing in Person 2's code needs to change.
- */
+/** Shared persistent audit provider used by Persons 2, 3 and 4. */
 @Module({
-  providers: [{ provide: AUDIT_LOGGER, useClass: ConsoleAuditLogger }],
+  imports: [AuditLogsModule],
+  providers: [{ provide: AUDIT_LOGGER, useExisting: AuditLogsService }],
   exports: [AUDIT_LOGGER],
 })
 export class AuditHookModule {}
