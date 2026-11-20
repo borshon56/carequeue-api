@@ -18,8 +18,8 @@ import { UserRole } from '../../common/enums/user-role.enum.js';
 
 @ApiTags('Queue & Check-in')
 @ApiBearerAuth()
-@Controller('queue-tickets')
 @UseGuards(JwtAuthGuard, RolesGuard)
+@Controller('queue-tickets')
 export class QueueTicketsController {
   constructor(private readonly queueService: QueueTicketsService) {}
 
