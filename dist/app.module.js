@@ -5,6 +5,8 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
     return c > 3 && r && Object.defineProperty(target, key, r), r;
 };
 import { Module } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { AuthModule } from './modules/auth/auth.module.js';
@@ -21,7 +23,35 @@ let AppModule = class AppModule {
 };
 AppModule = __decorate([
     Module({
-        imports: [AuthModule, UsersModule, PatientsModule, DoctorsModule, DepartmentsModule, SpecializationsModule, SlotsModule, AppointmentsModule, QueueTicketsModule, AuditLogsModule],
+        imports: [
+            ConfigModule.forRoot({
+                isGlobal: true,
+            }),
+            TypeOrmModule.forRootAsync({
+                imports: [ConfigModule],
+                inject: [ConfigService],
+                useFactory: (config) => ({
+                    type: 'postgres',
+                    host: config.get('DB_HOST', 'localhost'),
+                    port: Number(config.get('DB_PORT', '5432')),
+                    username: config.get('DB_USERNAME', 'postgres'),
+                    password: config.get('DB_PASSWORD', ''),
+                    database: config.get('DB_NAME', 'carequeue'),
+                    autoLoadEntities: true,
+                    synchronize: false,
+                }),
+            }),
+            AuthModule,
+            UsersModule,
+            PatientsModule,
+            DoctorsModule,
+            DepartmentsModule,
+            SpecializationsModule,
+            SlotsModule,
+            AppointmentsModule,
+            QueueTicketsModule,
+            AuditLogsModule,
+        ],
         controllers: [AppController],
         providers: [AppService],
     })
