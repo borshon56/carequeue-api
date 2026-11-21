@@ -27,6 +27,7 @@ import { UpdateProfileDto } from './dto/update-profile.dto.js';
 import { CreateStaffDto } from './dto/create-staff.dto.js';
 import { UpdateRoleDto } from './dto/update-role.dto.js';
 
+
 interface AuthenticatedRequest {
   user: {
     userId: string;
@@ -73,12 +74,18 @@ export class UsersController {
     );
   }
 
-  @Post('staff')
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN)
-  createStaff(@Body() dto: CreateStaffDto) {
-    return this.usersService.createStaff(dto);
-  }
+ @Post('staff')
+@UseGuards(RolesGuard)
+@Roles(UserRole.ADMIN)
+createStaff(
+  @Body() dto: CreateStaffDto,
+  @Req() req: AuthenticatedRequest,
+) {
+  return this.usersService.createStaff(
+    dto,
+    req.user.userId,
+  );
+}
 
   @Patch(':id/role')
   @UseGuards(RolesGuard)

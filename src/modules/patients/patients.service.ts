@@ -10,6 +10,12 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 
+import {Appointment,AppointmentStatus} from '../appointments/entities/appointment.entity.js';
+
+import { DoctorsService } from '../doctors/doctors.service.js';
+
+import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator.js';
+
 import { Patient } from './entities/patient.entity.js';
 import { UpdatePatientProfileDto } from './dto/update-patient-profile.dto.js';
 import { WalkInPatientDto } from './dto/create-walk-in-patient.dto.js';
@@ -20,6 +26,10 @@ import { AUDIT_LOGGER, type AuditLogger } from '../../common/audit/audit-logger.
 @Injectable()
 export class PatientsService {
   constructor(
+    @InjectRepository(Appointment)
+private readonly appointmentRepository: Repository<Appointment>,
+
+private readonly doctorsService: DoctorsService,
     @InjectRepository(Patient)
     private readonly patientRepository: Repository<Patient>,
     private readonly dataSource: DataSource,
@@ -190,4 +200,47 @@ export class PatientsService {
 
     return this.toResponse(patient);
   }
+  async getPatientByIdForActor(
+  id: string,
+  actor: AuthenticatedUser,
+) {
+  const patient = await this.patientRepository.findOne({
+    where: { id },
+    relations: { user: true },
+  });
+
+  if (!patient) {
+    throw new NotFoundException('Patient not found');
+  }
+
+  if (actor.role === UserRole.DOCTOR) {
+    const doctor = await this.doctorsService.getDoctorByUserId(
+      actor.userId,
+    );
+
+    if (!doctor) {
+      throw new NotFoundException('Patient not found');
+    }
+
+    const hasAppointment = await this.appointmentRepository
+      .createQueryBuilder('appointment')
+      .innerJoin('appointment.slot', 'slot')
+      .where('appointment.patient_id = :patientId', {
+        patientId: id,
+      })
+      .andWhere('slot.doctor_id = :doctorId', {
+        doctorId: doctor.id,
+      })
+      .andWhere('appointment.status <> :cancelled', {
+        cancelled: AppointmentStatus.CANCELLED,
+      })
+      .getExists();
+
+    if (!hasAppointment) {
+      throw new NotFoundException('Patient not found');
+    }
+  }
+
+  return this.toResponse(patient);
+}
 }
