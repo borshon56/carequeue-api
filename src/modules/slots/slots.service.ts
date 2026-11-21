@@ -18,7 +18,6 @@ import { AUDIT_LOGGER, type AuditLogger } from '../../common/audit/audit-logger.
 const MINUTE = 60_000;
 const DAY = 24 * 60 * MINUTE;
 
-/** Pending team decision: default slot length. Override with SLOT_DURATION_MINUTES in .env. */
 export const DEFAULT_SLOT_MINUTES = Number(process.env.SLOT_DURATION_MINUTES ?? 30);
 export const MIN_SLOT_MINUTES = 10;
 export const MAX_SLOT_MINUTES = 240;
@@ -32,16 +31,12 @@ export class SlotsService {
     @Inject(AUDIT_LOGGER) private readonly audit: AuditLogger,
   ) {}
 
-  // ---------------------------------------------------------------- doctor / admin management
-
   async createSlot(dto: CreateSlotDto, actor: AuthenticatedUser): Promise<DoctorSlot> {
     const startAt = new Date(dto.startAt);
     const endAt = new Date(dto.endAt);
     this.validateRange(startAt, endAt);
     try {
       return await this.dataSource.transaction(async (manager) => {
-        // Locking the doctor row serializes slot changes for the SAME doctor.
-        // The GiST exclusion constraint is the real guarantee; this just gives a clean 409.
         const doctor = await this.lockDoctor(manager, await this.resolveDoctorId(manager, dto.doctorId, actor));
         this.authorizeDoctor(actor, doctor);
         await this.assertNoOverlap(manager, doctor.id, startAt, endAt);
@@ -57,7 +52,6 @@ export class SlotsService {
     } catch (error) { this.handleConstraint(error); throw error; }
   }
 
-  /** Creates back-to-back slots for one working block in a single transaction (all or nothing). */
   async generateSlots(dto: GenerateSlotsDto, actor: AuthenticatedUser): Promise<{ created: number; slots: DoctorSlot[] }> {
     const from = new Date(dto.from);
     const to = new Date(dto.to);
@@ -144,8 +138,6 @@ export class SlotsService {
     } catch (error) { this.handleConstraint(error); throw error; }
   }
 
-  // ---------------------------------------------------------------- reads
-
   async getSlotById(id: string): Promise<DoctorSlot> {
     const slot = await this.slotsRepo.findOneBy({ id });
     if (!slot) throw new NotFoundException('Slot not found');
@@ -160,7 +152,6 @@ export class SlotsService {
     return slot;
   }
 
-  /** Staff view: every slot of one doctor (OPEN, BLOCKED, BOOKED, past and future). */
   async getDoctorSlots(doctorId: string, actor: AuthenticatedUser): Promise<DoctorSlot[]> {
     const doctor = await this.dataSource.getRepository(Doctor).findOneBy({ id: doctorId });
     if (!doctor) throw new NotFoundException('Doctor not found');
@@ -168,17 +159,12 @@ export class SlotsService {
     return this.slotsRepo.find({ where: { doctorId }, order: { startAt: 'ASC' } });
   }
 
-  /** The logged-in doctor's own slots; doctor id comes from the JWT, not the request. */
   async getMySlots(actor: AuthenticatedUser): Promise<DoctorSlot[]> {
     const doctor = await this.dataSource.getRepository(Doctor).findOneBy({ userId: actor.userId });
     if (!doctor) throw new NotFoundException('No doctor profile is linked to this account');
     return this.slotsRepo.find({ where: { doctorId: doctor.id }, order: { startAt: 'ASC' } });
   }
 
-  /**
-   * Public patient discovery: future, OPEN slots of active doctors with active accounts.
-   * One query, no read of another module's table, paginated.
-   */
   async getAvailableSlots(dto: AvailableSlotsDto): Promise<Paginated<DoctorSlot>> {
     const now = new Date();
     const from = dto.from ? new Date(Math.max(new Date(dto.from).getTime(), now.getTime())) : now;
@@ -206,14 +192,6 @@ export class SlotsService {
     return { items, page, limit, total };
   }
 
-  // ---------------------------------------------------------------- exported for Person 3 (Appointments)
-  // All three MUST be called with the EntityManager of Person 3's booking/cancel transaction.
-
-  /**
-   * Locks the slot row (SELECT ... FOR UPDATE) and checks it is bookable.
-   * Call FIRST inside the booking transaction. A second concurrent booking waits here,
-   * then sees status BOOKED and gets a 409.
-   */
   async lockSlotForBooking(manager: EntityManager, slotId: string): Promise<DoctorSlot> {
     const slot = await manager.getRepository(DoctorSlot).findOne({
       where: { id: slotId }, lock: { mode: 'pessimistic_write' },
@@ -228,7 +206,6 @@ export class SlotsService {
     return slot;
   }
 
-  /** OPEN -> BOOKED. Call in the same transaction, right before inserting the appointment. */
   async markSlotBooked(manager: EntityManager, slotId: string): Promise<void> {
     const result = await manager.createQueryBuilder().update(DoctorSlot)
       .set({ status: SlotStatus.BOOKED })
@@ -237,10 +214,6 @@ export class SlotsService {
     if (!result.affected) throw new ConflictException('Slot is not available');
   }
 
-  /**
-   * BOOKED -> OPEN when an appointment is cancelled. A slot whose time has passed
-   * is set to BLOCKED instead, so it never reappears in search.
-   */
   async releaseSlot(manager: EntityManager, slotId: string): Promise<void> {
     const slot = await manager.getRepository(DoctorSlot).findOne({
       where: { id: slotId }, lock: { mode: 'pessimistic_write' },
@@ -252,8 +225,6 @@ export class SlotsService {
     slot.status = reopen ? SlotStatus.OPEN : SlotStatus.BLOCKED;
     await manager.getRepository(DoctorSlot).save(slot);
   }
-
-  // ---------------------------------------------------------------- helpers
 
   private async resolveDoctorId(manager: EntityManager, requested: string | undefined, actor: AuthenticatedUser): Promise<string> {
     if (actor.role === UserRole.DOCTOR) {

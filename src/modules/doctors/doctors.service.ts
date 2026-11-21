@@ -16,7 +16,6 @@ import { AUDIT_LOGGER, type AuditLogger } from '../../common/audit/audit-logger.
 export interface DeactivationResult {
   message: string;
   blockedOpenSlots: number;
-  /** Future booked slots: their appointments must be cancelled/rescheduled by Appointments (Person 3). */
   futureBookedSlots: Array<{ slotId: string; startAt: Date }>;
 }
 
@@ -31,11 +30,7 @@ export class DoctorsService {
     @Inject(AUDIT_LOGGER) private readonly audit: AuditLogger,
   ) {}
 
-  /**
-   * Step 2 of doctor onboarding. Step 1 is Person 1's POST /users/staff with role DOCTOR.
-   */
   async createDoctor(dto: CreateDoctorDto, actorId: string): Promise<Doctor> {
-    // Person 1's exported service; throws 404 if the user does not exist.
     const user = await this.usersService.getProfile(dto.userId);
     if (!user.isActive) throw new BadRequestException('User account is inactive');
     if (user.role !== UserRole.DOCTOR) throw new BadRequestException('User must have the DOCTOR role');
@@ -53,7 +48,6 @@ export class DoctorsService {
     return saved;
   }
 
-  /** Public search: active doctors with active accounts, paginated. */
   async getAllDoctors(filters: SearchDoctorDto): Promise<Paginated<Doctor>> {
     const page = filters.page ?? 1;
     const limit = filters.limit ?? 20;
@@ -80,21 +74,18 @@ export class DoctorsService {
     return { items, page, limit, total };
   }
 
-  /** Public profile: only active doctors with active accounts. */
   async getPublicDoctorById(id: string): Promise<Doctor> {
     const doctor = await this.findWithDetails(id);
     if (!doctor || !doctor.isActive || !doctor.user?.isActive) throw new NotFoundException('Doctor not found');
     return doctor;
   }
 
-  /** Internal/admin lookup: includes inactive doctors. Exported for other modules. */
   async getDoctorById(id: string): Promise<Doctor> {
     const doctor = await this.findWithDetails(id);
     if (!doctor) throw new NotFoundException('Doctor not found');
     return doctor;
   }
 
-  /** Exported for Person 3/4: map a logged-in DOCTOR user to their doctor profile. */
   async getDoctorByUserId(userId: string): Promise<Doctor | null> {
     return this.doctorsRepo.findOneBy({ userId, isActive: true });
   }
@@ -129,12 +120,6 @@ export class DoctorsService {
     return this.getDoctorById(id);
   }
 
-  /**
-   * Soft delete. In one transaction:
-   *  - marks the doctor inactive (history is preserved),
-   *  - blocks all future OPEN slots so nobody can book them,
-   *  - reports future BOOKED slots so the appointments can be cancelled/rescheduled.
-   */
   async deactivateDoctor(id: string, actorId: string): Promise<DeactivationResult> {
     return this.dataSource.transaction(async (manager) => {
       const doctor = await manager.getRepository(Doctor).findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
@@ -162,7 +147,6 @@ export class DoctorsService {
     });
   }
 
-  /** Re-enables the doctor. Previously blocked slots stay BLOCKED; the doctor reopens what they want. */
   async reactivateDoctor(id: string, actorId: string): Promise<Doctor> {
     const doctor = await this.getDoctorById(id);
     if (doctor.isActive) throw new ConflictException('Doctor is already active');

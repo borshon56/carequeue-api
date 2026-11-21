@@ -16,8 +16,6 @@ import type { AuthenticatedUser } from '../../common/decorators/current-user.dec
 export class DoctorsController {
   constructor(private readonly doctorsService: DoctorsService) {}
 
-  // Static routes first so 'me' / 'admin' are not parsed as ':id'.
-
   @Get()
   @ApiOperation({ summary: 'Public: search active doctors (paginated)' })
   getAllDoctors(@Query() filters: SearchDoctorDto) { return this.doctorsService.getAllDoctors(filters); }
