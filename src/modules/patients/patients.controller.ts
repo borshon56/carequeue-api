@@ -21,6 +21,8 @@ import { RolesGuard } from '../auth/guards/roles.guard.js';
 
 import { Roles } from '../../common/decorators/roles.decorator.js';
 import { UserRole } from '../../common/enums/user-role.enum.js';
+import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
+import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator.js';
 
 import { UpdatePatientProfileDto } from './dto/update-patient-profile.dto.js';
 
@@ -85,14 +87,15 @@ export class PatientsController {
   // Admin, Receptionist and Doctor: View individual patient
   @Get(':id')
   @Roles(
-    UserRole.ADMIN,
-    UserRole.RECEPTIONIST,
-    UserRole.DOCTOR,
+  UserRole.ADMIN,
+  UserRole.RECEPTIONIST,
+  UserRole.DOCTOR,
   )
   @UseGuards(RolesGuard)
-  getPatientById(
-    @Param('id', ParseUUIDPipe) id: string,
-  ) {
-    return this.patientsService.getPatientById(id);
-  }
+ getPatientById(
+  @Param('id', ParseUUIDPipe) id: string,
+  @CurrentUser() actor: AuthenticatedUser,
+) {
+  return this.patientsService.getPatientByIdForActor(id, actor);
+}
 }

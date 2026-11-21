@@ -1,8 +1,8 @@
 
-import { Injectable, NotFoundException, BadRequestException, ConflictException, ForbiddenException} from '@nestjs/common';
+import { Injectable,Inject, NotFoundException, BadRequestException, ConflictException, ForbiddenException} from '@nestjs/common';
 
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource,Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 
 import { User } from './entities/user.entity.js';
@@ -11,10 +11,15 @@ import { UserRole } from '../../common/enums/user-role.enum.js';
 import { UpdateProfileDto } from './dto/update-profile.dto.js';
 import { CreateStaffDto } from './dto/create-staff.dto.js';
 import { UpdateRoleDto } from './dto/update-role.dto.js';
+import { AUDIT_LOGGER, type AuditLogger } from '../../common/audit/audit-logger.js';
 
 @Injectable()
 export class UsersService {
   constructor(
+    private readonly dataSource: DataSource,
+
+    @Inject(AUDIT_LOGGER)
+    private readonly audit: AuditLogger,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
   ) {}
@@ -88,102 +93,205 @@ export class UsersService {
   }
 
   // Admin: create staff account
-  async createStaff(dto: CreateStaffDto) {
-    if (![UserRole.DOCTOR, UserRole.RECEPTIONIST].includes(dto.role)) {
-      throw new BadRequestException(
-        'Only Doctor and Receptionist accounts can be created here',
-      );
-    }
+  async createStaff(dto: CreateStaffDto, actorUserId: string) {
+  if (
+    dto.role !== UserRole.DOCTOR &&
+    dto.role !== UserRole.RECEPTIONIST
+  ) {
+    throw new BadRequestException(
+      'Only Doctor and Receptionist accounts can be created here',
+    );
+  }
 
-    const email = dto.email.toLowerCase().trim();
+  const email = dto.email.trim().toLowerCase();
+  const fullName = dto.fullName.trim();
 
-    const existingUser = await this.userRepository.findOne({
-      where: { email },
-    });
+  if (!fullName) {
+    throw new BadRequestException('Full name is required');
+  }
 
-    if (existingUser) {
+  const passwordHash = await bcrypt.hash(dto.password, 12);
+
+  try {
+    const savedUser = await this.dataSource.transaction(
+      async (manager) => {
+        const users = manager.getRepository(User);
+
+        const existing = await users.findOne({
+          where: { email },
+        });
+
+        if (existing) {
+          throw new ConflictException('Email already registered');
+        }
+
+        const user = await users.save(users.create({
+          fullName,
+          email,
+          passwordHash,
+          role: dto.role,
+          phone: dto.phone?.trim() || null,
+          isActive: true,
+        }));
+
+        await this.audit.log({
+          actorUserId,
+          action: 'STAFF_CREATED',
+          entity: 'users',
+          entityId: user.id,
+          newValues: {
+            fullName: user.fullName,
+            email: user.email,
+            role: user.role,
+          },
+        }, manager);
+
+        return user;
+      },
+    );
+
+    return this.safeUser(savedUser);
+  } catch (error) {
+    const dbError = error as {
+      code?: string;
+      driverError?: { code?: string };
+    };
+
+    if (
+      dbError.code === '23505' ||
+      dbError.driverError?.code === '23505'
+    ) {
       throw new ConflictException('Email already registered');
     }
 
-    const passwordHash = await bcrypt.hash(dto.password, 12);
-
-    const user = this.userRepository.create({
-      fullName: dto.fullName,
-      email,
-      passwordHash,
-      role: dto.role,
-      phone: dto.phone ?? null,
-    });
-
-    try {
-      const savedUser = await this.userRepository.save(user);
-      return this.safeUser(savedUser);
-    } catch (error) {
-      const dbError = error as {
-        code?: string;
-        driverError?: { code?: string };
-      };
-
-      if (
-        dbError.code === '23505' ||
-        dbError.driverError?.code === '23505'
-      ) {
-        throw new ConflictException('Email already registered');
-      }
-
-      throw error;
-    }
+    throw error;
   }
-
+}
   // Admin: change user role
   async updateRole(
-    id: string,
-    dto: UpdateRoleDto,
-    adminId: string,
-  ) {
-    if (id === adminId) {
-      throw new ForbiddenException(
-        'You cannot change your own role',
-      );
-    }
+  id: string,
+  dto: UpdateRoleDto,
+  adminId: string,
+) {
+  if (id === adminId) {
+    throw new ForbiddenException(
+      'You cannot change your own role',
+    );
+  }
 
-    const user = await this.userRepository.findOne({
+  return this.dataSource.transaction(async (manager) => {
+    await manager.query(
+      'SELECT pg_advisory_xact_lock(hashtext($1))',
+      ['carequeue:active-admins'],
+    );
+
+    const users = manager.getRepository(User);
+
+    const user = await users.findOne({
       where: { id },
+      lock: { mode: 'pessimistic_write' },
     });
 
     if (!user) {
       throw new NotFoundException('User not found');
     }
 
+    if (user.role === dto.role) {
+      return this.safeUser(user);
+    }
+
+    if (user.role === UserRole.ADMIN && user.isActive) {
+      const count = await users.count({
+        where: {
+          role: UserRole.ADMIN,
+          isActive: true,
+        },
+      });
+
+      if (count <= 1) {
+        throw new ForbiddenException(
+          'Cannot demote the last active administrator',
+        );
+      }
+    }
+
+    const oldRole = user.role;
     user.role = dto.role;
 
-    const updatedUser = await this.userRepository.save(user);
+    const updated = await users.save(user);
 
-    return this.safeUser(updatedUser);
-  }
+    await this.audit.log({
+      actorUserId: adminId,
+      action: 'USER_ROLE_UPDATED',
+      entity: 'users',
+      entityId: user.id,
+      oldValues: { role: oldRole },
+      newValues: { role: updated.role },
+    }, manager);
+
+    return this.safeUser(updated);
+  });
+}
 
   // Admin: deactivate user
   async deactivateUser(id: string, adminId: string) {
-    if (id === adminId) {
-      throw new ForbiddenException(
-        'You cannot deactivate your own account',
-      );
-    }
+  if (id === adminId) {
+    throw new ForbiddenException(
+      'You cannot deactivate your own account',
+    );
+  }
 
-    const user = await this.userRepository.findOne({
+  return this.dataSource.transaction(async (manager) => {
+    await manager.query(
+      'SELECT pg_advisory_xact_lock(hashtext($1))',
+      ['carequeue:active-admins'],
+    );
+
+    const users = manager.getRepository(User);
+
+    const user = await users.findOne({
       where: { id },
+      lock: { mode: 'pessimistic_write' },
     });
 
     if (!user) {
       throw new NotFoundException('User not found');
     }
 
+    if (!user.isActive) {
+      return { message: 'User is already inactive' };
+    }
+
+    if (user.role === UserRole.ADMIN) {
+      const count = await users.count({
+        where: {
+          role: UserRole.ADMIN,
+          isActive: true,
+        },
+      });
+
+      if (count <= 1) {
+        throw new ForbiddenException(
+          'Cannot deactivate the last active administrator',
+        );
+      }
+    }
+
+    const oldValues = { isActive: user.isActive };
+
     user.isActive = false;
+    await users.save(user);
 
-    await this.userRepository.save(user);
+    await this.audit.log({
+      actorUserId: adminId,
+      action: 'USER_DEACTIVATED',
+      entity: 'users',
+      entityId: user.id,
+      oldValues,
+      newValues: { isActive: false },
+    }, manager);
 
-    return {
-      message: 'User deactivated successfully',
-    };
-  }
+    return { message: 'User deactivated successfully' };
+  });
+}
 }
